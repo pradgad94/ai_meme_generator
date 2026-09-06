@@ -1,0 +1,15 @@
+FROM node:22-slim
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY index.html ./
+COPY vite.config.ts ./
+COPY tsconfig.json ./
+COPY src ./src
+COPY public ./public
+
+CMD ["npm", "run", "dev:web", "--", "--host", "0.0.0.0"]
