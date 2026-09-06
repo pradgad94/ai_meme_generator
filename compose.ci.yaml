@@ -1,0 +1,15 @@
+services:
+
+  backend:
+    image: ghcr.io/pradgad94/meme-backend:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+
+
+
+  frontend:
+    image: ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
