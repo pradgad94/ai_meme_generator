@@ -12,16 +12,18 @@ services:
     env_file:
       - .env
 
+
   frontend:
     image: ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.frontend
-      args:
-        VITE_API_URL: ""
 
     ports:
       - "5173:80"
+
+    environment:
+      API_UPSTREAM: http://backend:8787
 
     depends_on:
       - backend
