@@ -6,10 +6,10 @@ services:
       context: .
       dockerfile: Dockerfile.backend
 
-
-
   frontend:
     image: ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
