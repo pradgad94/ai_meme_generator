@@ -1,4 +1,4 @@
-# 🔥 AI Meme Generator
+# AI Meme Generator
 
 [![CI](https://github.com/pradgad94/ai_meme_generator/actions/workflows/ci.yml/badge.svg)](https://github.com/pradgad94/ai_meme_generator/actions/workflows/ci.yml)
 
@@ -6,7 +6,7 @@
 
 Pick a vibe — Bollywood, cartoons, viral songs, or sports — and get five fresh memes in seconds. Captions are written by an LLM (via [OpenRouter](https://openrouter.ai)) and printed onto classic meme templates from [memegen.link](https://memegen.link).
 
-Built as a containerized full-stack application with a Vite/React/TypeScript frontend and an Express backend. Docker Compose manages local multi-container development, while GitHub Actions validates builds and publishes versioned Docker images to GitHub Container Registry (GHCR). API keys remain server-side and are injected at runtime rather than baked into container images.
+Built as a containerized full-stack application with a Vite/React/TypeScript frontend and an Express backend. Docker Compose manages local multi-container development, GitHub Actions validates builds and publishes versioned Docker images to GitHub Container Registry (GHCR), and the same images are deployed as two separate web services on [Render](https://render.com). API keys remain server-side and are injected at runtime rather than baked into container images.
 
 ## Features
 
@@ -23,16 +23,18 @@ Built as a containerized full-stack application with a Vite/React/TypeScript fro
 | -------- | ------------------------------------------------------------------ |
 | Frontend | React 19, TypeScript, Vite 8                                       |
 | Backend  | Node.js, Express 5                                                  |
-| AI       | [OpenRouter](https://openrouter.ai) chat completions (free-tier models) |
+| AI       | [OpenRouter](https://openrouter.ai) chat completions (defaults to `openrouter/free`, override via `OPENROUTER_MODEL`) |
 | Images   | [memegen.link](https://memegen.link) template + caption rendering API |
+| Production web server | Nginx (serves the built frontend, reverse-proxies `/api/*` to the backend) |
 | Containerization | Docker, Docker Compose |
 | CI | GitHub Actions |
 | Container Registry | GitHub Container Registry (GHCR) |
+| Hosting | [Render](https://render.com) (two Docker web services) |
 
 ## How it works
 
 ```
-Browser (Vite, :5173)                 Backend (Express, :8787)
+Browser (:5173)                       Backend (Express, :8787)
 ┌─────────────────────┐   POST /api/memes   ┌──────────────────────────┐
 │ CategoryPicker click │ ───────────────────▶│ 1. pick 5 meme templates │
 │  useMemeGenerator()  │                     │ 2. ask OpenRouter for    │
@@ -42,20 +44,21 @@ Browser (Vite, :5173)                 Backend (Express, :8787)
                                              └──────────────────────────┘
 ```
 
-Vite proxies any `/api/*` request to `http://backend:8787` (see `vite.config.ts`) — the `backend` hostname is resolved via Docker Compose's internal network, so this proxy only works when the frontend is running in its container.
+The frontend always makes relative `/api` requests — it never knows the backend's real address. Two different things resolve that relative path, depending on how the frontend is running:
 
-The frontend always makes relative `/api` requests, keeping the backend URL
-and OpenRouter API key server-side.
+- **Host dev** (`npm run dev`) — Vite's dev-server proxy forwards `/api/*` to `http://backend:8787` (see `vite.config.ts`). That hostname is only resolvable inside the Docker Compose network, so this only works when run in the frontend container, not directly on the host (see the note under [Run it](#run-it)).
+- **Containers, local or Render** — the frontend container runs Nginx (not Vite), which reverse-proxies `/api/*` to an `API_UPSTREAM` URL supplied at container start. Locally that's `http://backend:8787`; on Render it's the backend service's public URL.
+
+Either way, the backend URL and OpenRouter API key stay server-side.
 
 ## Docker
 
 The application is containerized as two separate services, each with its own Dockerfile:
 
-- **`frontend`** — built from `Dockerfile.frontend`, runs the Vite dev server on port `5173`
+- **`frontend`** — built from `Dockerfile.frontend`, a multi-stage build: stage 1 runs `npm run build` to produce the production Vite bundle, stage 2 copies it into an `nginx:alpine` image that serves it on port `80`. Nginx's config is generated at container start from `default.conf.template` (via Nginx's built-in `envsubst` templating), which reverse-proxies `/api/*` to `${API_UPSTREAM}` — so the same image works against any backend URL without a rebuild.
 - **`backend`** — built from `Dockerfile.backend`, runs the Express API on port `8787` and reads secrets from `.env` via `env_file` (so the OpenRouter key never gets baked into the image)
 
-`compose.yaml` builds and runs both services locally. The `image:` configuration
-tags the resulting images as:
+`compose.yaml` builds and runs both services locally, mapping the frontend's Nginx port to `5173:80` and setting `API_UPSTREAM=http://backend:8787` so it reaches the backend service by its Compose network name. The `image:` configuration tags the resulting images as:
 
 - `ghcr.io/pradgad94/meme-backend:${IMAGE_TAG:-latest}`
 - `ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}`
@@ -66,9 +69,9 @@ A second file, `compose.ci.yaml`, is used only by CI to build/push those same im
 Browser
    |
    v
-Frontend container (:5173)
+Frontend container (Nginx, :5173 → :80)
    |
-   | /api requests
+   | /api/* --reverse proxy--> $API_UPSTREAM
    v
 Backend container (:8787)
    |
@@ -76,7 +79,7 @@ Backend container (:8787)
 OpenRouter API
 ```
 
-## CI & Container Publishing
+## CI/CD
 
 `.github/workflows/ci.yml` runs on:
 
@@ -96,6 +99,11 @@ The CI workflow publishes commit-tagged container images to GitHub Container Reg
 
 Using the Git commit SHA as the image tag provides a direct mapping between a
 Docker image and the source code used to build it.
+
+### Deployment (Render)
+The Docker images built from the two Dockerfiles are deployed as two separate Render web services:
+- **Backend** service builds from `Dockerfile.backend` and holds the real secrets (`OPEN_ROUTER_API_KEY`, optionally `OPENROUTER_MODEL`) as Render environment variables.
+- **Frontend** service builds from `Dockerfile.frontend`, with its `API_UPSTREAM` environment variable set to the backend service's public Render URL, so Nginx proxies `/api/*` to it exactly as it proxies to `backend:8787` locally — no code or image changes between local, CI, and Render, only the `API_UPSTREAM` value differs.
 
 ## Getting started
 
@@ -131,9 +139,9 @@ PORT=                           # optional: defaults to 8787
 docker compose up --build
 ```
 
-This builds and starts both containers — frontend on `:5173`, backend on `:8787`. Open **http://localhost:5173**.
+This builds and starts both containers — frontend (Nginx, serving the production build) on `:5173`, backend (Express) on `:8787`. Open **http://localhost:5173**.
 
-> **Note:** `npm run dev` (see [Available scripts](#available-scripts)) is no longer a drop-in alternative — the Vite proxy in `vite.config.ts` points at `http://backend:8787`, a hostname that only resolves inside the Docker Compose network. Running the frontend directly on the host will fail to reach the API unless that proxy target is changed back to `localhost`.
+> **Note:** `npm run dev` (see [Available scripts](#available-scripts)) is no longer a drop-in alternative — the Vite proxy in `vite.config.ts` points at `http://backend:8787`, a hostname that only resolves inside the Docker Compose network. Running the frontend directly on the host will fail to reach the API unless that proxy target is changed back to `localhost`. It also won't hot-reload the containerized frontend, since the container serves a static production build rather than the Vite dev server.
 
 ## Available scripts
 
@@ -152,7 +160,8 @@ meme_generator/
 ├── .dockerignore            # Files excluded from Docker build context
 ├── compose.yaml             # Local dev: builds + runs frontend/backend containers
 ├── compose.ci.yaml          # CI-only: builds/pushes images, no containers started
-├── Dockerfile.frontend      # Frontend image (Vite dev server on :5173)
+├── Dockerfile.frontend      # Multi-stage: Vite build → Nginx serving on :80
+├── default.conf.template    # Nginx config template (proxies /api/* to $API_UPSTREAM)
 ├── Dockerfile.backend       # Backend image (Express API on :8787)
 ├── .github/
 │   └── workflows/
@@ -233,6 +242,9 @@ This project was originally developed as part of the Naukri AI Bootcamp. I indep
 - Configured authentication and permissions for GitHub Container Registry
 - Implemented commit SHA-based Docker image tagging
 - Published frontend and backend container images to GHCR
+- Migrated the frontend to a multi-stage Docker build that serves the production bundle via Nginx instead of the Vite dev server
+- Configured Nginx to reverse-proxy `/api/*` to a configurable `API_UPSTREAM`, so the same frontend image works unmodified across local Compose and Render
+- Deployed both services to Render as separate Docker web services
 
 ## Credits
 
