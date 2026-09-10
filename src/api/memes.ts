@@ -1,8 +1,10 @@
 import type { CategoryId } from '../categories'
 import type { Meme } from '../types'
 
+const API_URL = import.meta.env.VITE_API_URL || ''
+
 export async function generateMemes(category: CategoryId): Promise<Meme[]> {
-  const res = await fetch('/api/memes', {
+  const res = await fetch(`${API_URL}/api/memes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ category }),
