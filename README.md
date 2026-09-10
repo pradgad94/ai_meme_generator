@@ -76,7 +76,7 @@ Backend container (:8787)
 OpenRouter API
 ```
 
-### CI & Container Publishing
+## CI & Container Publishing
 
 `.github/workflows/ci.yml` runs on:
 
@@ -86,6 +86,16 @@ OpenRouter API
 1. **`build`** — runs `npm ci` and `npm run build` to install dependencies and validate the frontend build.
 
 2. **`docker`** — after the build job succeeds, builds both Docker images via `compose.ci.yaml`. On pushes to `master`, the workflow logs into GHCR and publishes the images tagged with the Git commit SHA.
+
+### Published Images
+
+The CI workflow publishes commit-tagged container images to GitHub Container Registry:
+
+- `ghcr.io/pradgad94/meme-backend:<commit-sha>`
+- `ghcr.io/pradgad94/meme-frontend:<commit-sha>`
+
+Using the Git commit SHA as the image tag provides a direct mapping between a
+Docker image and the source code used to build it.
 
 ## Getting started
 
@@ -206,9 +216,7 @@ CSS custom properties in `src/style.css` define the whole "Paper Brutalism" pale
 
 ## My Contributions
 
-This project was originally developed as part of the Naukri AI Bootcamp. The core application and provided backend formed the starting point.
-
-I independently extended the project with the following infrastructure and DevOps work:
+This project was originally developed as part of the Naukri AI Bootcamp. I independently extended the project with the following infrastructure and DevOps work:
 
 - Containerized the frontend and backend using separate Dockerfiles
 - Created a multi-container Docker Compose setup for local development
