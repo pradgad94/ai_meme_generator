@@ -1,10 +1,12 @@
 # 🔥 AI Meme Generator
 
+[![CI](https://github.com/pradgad94/ai_meme_generator/actions/workflows/ci.yml/badge.svg)](https://github.com/pradgad94/ai_meme_generator/actions/workflows/ci.yml)
+
 > Naukri AI Bootcamp · Week 01
 
 Pick a vibe — Bollywood, cartoons, viral songs, or sports — and get five fresh memes in seconds. Captions are written by an LLM (via [OpenRouter](https://openrouter.ai)) and printed onto classic meme templates from [memegen.link](https://memegen.link).
 
-Built as a two-process app: a Vite/React/TypeScript frontend and a small Express backend that keeps the AI API key server-side, never exposed to the browser.
+Built as a containerized full-stack application with a Vite/React/TypeScript frontend and an Express backend. Docker Compose manages local multi-container development, while GitHub Actions validates builds and publishes versioned Docker images to GitHub Container Registry (GHCR). API keys remain server-side and are injected at runtime rather than baked into container images.
 
 ## Features
 
@@ -23,6 +25,9 @@ Built as a two-process app: a Vite/React/TypeScript frontend and a small Express
 | Backend  | Node.js, Express 5                                                  |
 | AI       | [OpenRouter](https://openrouter.ai) chat completions (free-tier models) |
 | Images   | [memegen.link](https://memegen.link) template + caption rendering API |
+| Containerization | Docker, Docker Compose |
+| CI | GitHub Actions |
+| Container Registry | GitHub Container Registry (GHCR) |
 
 ## How it works
 
@@ -37,13 +42,60 @@ Browser (Vite, :5173)                 Backend (Express, :8787)
                                              └──────────────────────────┘
 ```
 
-In dev, Vite proxies any `/api/*` request to `http://localhost:8787` (see `vite.config.ts`), so the frontend only ever talks to relative `/api` paths — the backend URL and the OpenRouter key live server-side only.
+In dev, Vite proxies any `/api/*` request to `http://localhost:8787` (see `vite.config.ts`). 
+
+When running with Docker Compose, the frontend uses the `backend` service name
+to communicate with the Express container over Docker's internal network.
+
+The frontend always makes relative `/api` requests, keeping the backend URL
+and OpenRouter API key server-side..
+
+## Docker
+
+The application is containerized as two separate services, each with its own Dockerfile:
+
+- **`frontend`** — built from `Dockerfile.frontend`, runs the Vite dev server on port `5173`
+- **`backend`** — built from `Dockerfile.backend`, runs the Express API on port `8787` and reads secrets from `.env` via `env_file` (so the OpenRouter key never gets baked into the image)
+
+`compose.yaml` builds and runs both services locally. The `image:` configuration
+tags the resulting images as:
+
+- `ghcr.io/pradgad94/meme-backend:${IMAGE_TAG:-latest}`
+- `ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}`  
+
+A second file, `compose.ci.yaml`, is used only by CI to build/push those same images without starting containers.
+
+```text
+Browser
+   |
+   v
+Frontend container (:5173)
+   |
+   | /api requests
+   v
+Backend container (:8787)
+   |
+   v
+OpenRouter API
+```
+
+### CI & Container Publishing
+
+`.github/workflows/ci.yml` runs on:
+
+- pushes to `master`
+- pull requests targeting `master`
+
+1. **`build`** — runs `npm ci` and `npm run build` to install dependencies and validate the frontend build.
+
+2. **`docker`** — after the build job succeeds, builds both Docker images via `compose.ci.yaml`. On pushes to `master`, the workflow logs into GHCR and publishes the images tagged with the Git commit SHA.
 
 ## Getting started
 
 ### Prerequisites
 
-- Node.js 20+ and npm
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose (to run the app as containers, the intended path)
+- Node.js 20+ and npm (only needed if you want to run the frontend/backend directly on the host instead)
 - A free [OpenRouter](https://openrouter.ai/keys) API key
 
 ### Setup
@@ -51,7 +103,6 @@ In dev, Vite proxies any `/api/*` request to `http://localhost:8787` (see `vite.
 ```bash
 git clone <this-repo-url>
 cd meme_generator
-npm install
 ```
 
 Create your local env file and add your key:
@@ -70,10 +121,12 @@ PORT=                           # optional: defaults to 8787
 ### Run it
 
 ```bash
-npm run dev
+docker compose up --build
 ```
 
-This starts the Vite dev server (`:5173`) and the Express API (`:8787`) together, with color-coded logs. Open **http://localhost:5173**.
+This builds and starts both containers — frontend on `:5173`, backend on `:8787`. Open **http://localhost:5173**.
+
+Prefer running without Docker? `npm install` then `npm run dev` does the same thing as two local processes (see [Available scripts](#available-scripts)).
 
 ## Available scripts
 
@@ -89,6 +142,14 @@ This starts the Vite dev server (`:5173`) and the Express API (`:8787`) together
 
 ```
 meme_generator/
+├── .dockerignore            # Files excluded from Docker build context
+├── compose.yaml             # Local dev: builds + runs frontend/backend containers
+├── compose.ci.yaml          # CI-only: builds/pushes images, no containers started
+├── Dockerfile.frontend      # Frontend image (Vite dev server on :5173)
+├── Dockerfile.backend       # Backend image (Express API on :8787)
+├── .github/
+│   └── workflows/
+│       └── ci.yml           # Build + Docker build/push to GHCR
 ├── index.html              # Vite entry HTML
 ├── vite.config.ts          # React plugin + /api → :8787 proxy
 ├── tsconfig.json
