@@ -42,13 +42,10 @@ Browser (Vite, :5173)                 Backend (Express, :8787)
                                              └──────────────────────────┘
 ```
 
-In dev, Vite proxies any `/api/*` request to `http://localhost:8787` (see `vite.config.ts`). 
-
-When running with Docker Compose, the frontend uses the `backend` service name
-to communicate with the Express container over Docker's internal network.
+Vite proxies any `/api/*` request to `http://backend:8787` (see `vite.config.ts`) — the `backend` hostname is resolved via Docker Compose's internal network, so this proxy only works when the frontend is running in its container.
 
 The frontend always makes relative `/api` requests, keeping the backend URL
-and OpenRouter API key server-side..
+and OpenRouter API key server-side.
 
 ## Docker
 
@@ -61,7 +58,7 @@ The application is containerized as two separate services, each with its own Doc
 tags the resulting images as:
 
 - `ghcr.io/pradgad94/meme-backend:${IMAGE_TAG:-latest}`
-- `ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}`  
+- `ghcr.io/pradgad94/meme-frontend:${IMAGE_TAG:-latest}`
 
 A second file, `compose.ci.yaml`, is used only by CI to build/push those same images without starting containers.
 
@@ -126,7 +123,7 @@ docker compose up --build
 
 This builds and starts both containers — frontend on `:5173`, backend on `:8787`. Open **http://localhost:5173**.
 
-Prefer running without Docker? `npm install` then `npm run dev` does the same thing as two local processes (see [Available scripts](#available-scripts)).
+> **Note:** `npm run dev` (see [Available scripts](#available-scripts)) is no longer a drop-in alternative — the Vite proxy in `vite.config.ts` points at `http://backend:8787`, a hostname that only resolves inside the Docker Compose network. Running the frontend directly on the host will fail to reach the API unless that proxy target is changed back to `localhost`.
 
 ## Available scripts
 
@@ -206,6 +203,28 @@ A 4xx/5xx response is surfaced in the UI as `Couldn't generate memes. Please try
 ## Design system
 
 CSS custom properties in `src/style.css` define the whole "Paper Brutalism" palette: warm paper/card backgrounds, near-black ink, a teal accent, a yellow highlight, hard offset shadows (`5px`/`8px`), and thick `2.5px` ink borders. Interactive elements (category cards, buttons, meme cards) share one hover/press/focus-visible interaction pattern; motion is disabled under `prefers-reduced-motion`.
+
+## My Contributions
+
+This project was originally developed as part of the Naukri AI Bootcamp. The core application and provided backend formed the starting point.
+
+I independently extended the project with the following infrastructure and DevOps work:
+
+- Containerized the frontend and backend using separate Dockerfiles
+- Created a multi-container Docker Compose setup for local development
+- Configured frontend-to-backend communication within the Docker network
+- Added `.dockerignore` to optimize Docker build contexts
+- Separated local runtime configuration from CI configuration using:
+  - `compose.yaml`
+  - `compose.ci.yaml`
+- Kept API secrets out of Docker images and configured them as runtime environment variables
+- Designed and implemented a GitHub Actions CI workflow
+- Added frontend dependency installation and build validation
+- Configured dependent CI jobs using `needs`
+- Added conditional image publishing for pushes to `master`
+- Configured authentication and permissions for GitHub Container Registry
+- Implemented commit SHA-based Docker image tagging
+- Published frontend and backend container images to GHCR
 
 ## Credits
 
